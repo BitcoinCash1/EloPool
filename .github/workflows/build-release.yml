@@ -1,0 +1,60 @@
+name: Build and Release
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        type: string
+        required: true
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Tag to build (e.g. v1.1.0)
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ inputs.tag }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y autoconf automake libtool build-essential libzmq3-dev
+
+      - name: Build
+        run: |
+          ./autogen.sh
+          ./configure
+          make
+
+      - name: Fetch upstream release notes
+        id: notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          body=$(gh release view "${{ inputs.tag }}" --repo skaisser/ckpool --json body -q .body 2>/dev/null || echo "")
+          {
+            echo "body<<EOF"
+            echo "$body"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.tag }}
+          name: ${{ inputs.tag }}
+          body: ${{ steps.notes.outputs.body }}
+          files: |
+            src/ckpool
+            src/ckpmsg
+            src/notifier
